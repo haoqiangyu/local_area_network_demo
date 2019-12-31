@@ -1,12 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:udp/udp.dart';
+import 'package:local_area_network_demo/device_model.dart';
+import 'package:local_area_network_demo/password_input.dart';
+import 'package:local_area_network_demo/uuid.dart';
 
-void main() => runApp(MyApp());
+import 'sp_util.dart';
 
+Future<void> main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+  await SpUtil.getInstance();
+  runApp(MyApp());
+}
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -30,12 +38,18 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   String data;
-  UDP sender;
-  UDP receiver;
+  List<DeviceModel> devices;
+  String deviceName;
 
   @override
   void initState() {
     data = '';
+    devices = List<DeviceModel>();
+    if(SpUtil.getBool('isFirst',defValue: true)){
+      SpUtil.putString('uuid', Uuid().generateV4());
+      SpUtil.putBool('isFirst', false);
+    }
+    deviceName = '设备';
     super.initState();
   }
 
@@ -51,108 +65,78 @@ class _MyHomePageState extends State<MyHomePage> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              Offstage(
+                offstage: Platform.isAndroid,
+                child: CupertinoButton(
+                    child: Text('IOS联网权限'),
+                    onPressed: () {
+                      getHttp();
+                    }),
+              ),
               CupertinoButton(
-                  child: Text('开始发送'),
+                  child: Text('发送(请求加入队伍)'),
                   onPressed: () {
-                    _startSend();
+                    testSend();
                   }),
-              CupertinoButton(
-                  child: Text('停止发送'),
-                  onPressed: () {
-                    _stopSend();
-                  }),
-              //CupertinoButton(child: Text('发送消息'), onPressed: () {}),
+              Expanded(
+                child: TextField(
+                    decoration: InputDecoration(
+                      hintText: '昵称',
+                    ),
+                  onChanged: (text){
+                      deviceName = text;
+                  },
+                ),
+              ),
             ],
           ),
           Expanded(
             child: Container(
               width: MediaQuery.of(context).size.width,
-              color: Colors.grey,
-              child: Text(
-                data,
-                style: TextStyle(fontSize: 30),
+              color: Colors.black26,
+              child: SingleChildScrollView(
+                child: Text(
+                  data,
+                  style: TextStyle(fontSize: 21),
+                ),
               ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              width: MediaQuery.of(context).size.width,
+              color: Colors.grey,
+              child: devices.length!=0?ListView.builder(
+                itemCount: devices.length,
+                  itemBuilder: (context , index){
+                return Text(devices[index].deviceName,style: TextStyle(fontSize: 21,color: Colors.lightGreen),);
+              }):null,
+            ),
+          ),
+          Expanded(
+            child: Container(
+              color: Colors.black54,
             ),
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               CupertinoButton(
-                  child: Text('开始接收'),
+                  child: Text('接收(建立队伍)'),
                   onPressed: () {
-                    _startReceive();
+                    testReceive();
                   }),
               CupertinoButton(
-                  child: Text('停止接收'),
+                  child: Text('关闭接收者(关闭队伍)'),
                   onPressed: () {
-                    _stopReceive();
+                    closeReceive();
                   }),
-              //CupertinoButton(child: Text('发送消息'), onPressed: () {}),
             ],
           ),
+          VerificationCodePage(),
         ],
       ),
     );
-  }
-
-  _startSend() async {
-    sender = await UDP.bind(Endpoint.loopback(port: Port(54321)));
-    var dataLength = await sender.send(
-        "Hello World!".codeUnits, Endpoint.broadcast(port: Port(54321)));
-    //stdout.write("$dataLength bytes sent.");
-    setState(() {
-      data = '发送成功\n字符长度为$dataLength\n${sender.local.port.toString()}';
-    });
-  }
-
-  _stopSend() {
-//    sender?.close();
-//    setState(() {
-//      data='';
-//    });
-    testSend();
-  }
-
-  _startReceive() async {
-//    ServerSocket serverSocket =await ServerSocket.bind(InternetAddress.loopbackIPv4, 54321,shared: true);
-//    setState(() {
-//      data = '开始接收';
-//    });
-//    serverSocket.listen(dataHandler,onError: errorHandler,cancelOnError: false,onDone: (){
-//      serverSocket.close();
-//    });
-
-    receiver = await UDP.bind(Endpoint.loopback(port: Port(54321)));
-    await receiver.listen(
-      (datagram) {
-        var str = String.fromCharCodes(datagram.data);
-        //stdout.write(str);
-        setState(() {
-          data = '接受响应成功\n$str';
-        });
-      },
-      timeout: Duration(seconds: 20),
-    );
-  }
-
-  _stopReceive() {
-//    receiver?.close();
-//    setState(() {
-//      data='';
-//    });
-
-    textReceive();
-  }
-
-  void dataHandler(data) {
-    setState(() {
-      this.data = '接受UDP包\n$data';
-    });
-    print(String.fromCharCodes(data).trim());
-  }
-
-  void errorHandler(error, StackTrace trace) {
-    print(error);
   }
 
   void testSend() {
@@ -163,34 +147,66 @@ class _MyHomePageState extends State<MyHomePage> {
       udpSocket.listen((e) {
         Datagram dg = udpSocket.receive();
         if (dg != null) {
-          print("received ${String.fromCharCodes(dg.data)}");
-          setState(() {
-            this.data = '接收数据--${String.fromCharCodes(dg.data)}';
-          });
+          udpSocket.close();
         }
       });
-      List<int> data = utf8.encode('TEST');
+      DeviceModel device  = DeviceModel(deviceName: deviceName,deviceUuid: SpUtil.getString('uuid'));
+      List<int> data = utf8.encode(json.encode(device.toJson()));
       udpSocket.send(data, DESTINATION_ADDRESS, 8889);
       setState(() {
-        this.data = '发送数据--TEST';
+        this.data = '发送数据--${device.toJson().toString()}';
       });
     });
   }
 
-  void textReceive() async {
+  void testReceive() async {
     RawDatagramSocket.bind(InternetAddress.anyIPv4, 8889)
         .then((RawDatagramSocket udpSocket) {
-      udpSocket.listen((e) {
+      receiver = udpSocket;
+      receiver.listen((e) {
         Datagram dg = udpSocket.receive();
         if (dg != null) {
-          print("received ${String.fromCharCodes(dg.data)}");
           print('ip${dg.address.address}');
+          Utf8Decoder utf8decoder= Utf8Decoder();
+          String jsonDevice = utf8decoder.convert(dg.data);
+          DeviceModel device = DeviceModel.fromJson(json.decode(jsonDevice));
+          if(devices.length==0){
+            devices.add(device);
+          }else{
+            List<String> uuids = List<String>();
+            for(DeviceModel deviceModel in devices){
+              uuids.add(deviceModel.deviceUuid);
+            }
+            if(!uuids.contains(device.deviceUuid)){
+              devices.add(device);
+            }
+
+          }
           setState(() {
             this.data =
-                '接收数据--${String.fromCharCodes(dg.data)}\nip${dg.address.address}\nport${dg.port}';
+            '接收数据--$jsonDevice\nip${dg.address}\nport${dg.port}\nhost${dg.address.host}';
           });
         }
       });
     });
+  }
+
+  RawDatagramSocket receiver;
+
+  void closeReceive() {
+    receiver?.close();
+    setState(() {
+      data = '';
+      devices.clear();
+    });
+  }
+
+  void getHttp() async {
+    try {
+      Response response = await Dio().get("http://www.baidu.com");
+      print(response);
+    } catch (e) {
+      print(e);
+    }
   }
 }
