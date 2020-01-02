@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:local_area_network_demo/device_model.dart';
+import 'package:local_area_network_demo/answer_model.dart';
+import 'package:local_area_network_demo/broadcast_model.dart';
+import 'package:local_area_network_demo/constant.dart';
+import 'package:local_area_network_demo/lan_discovery.dart';
 import 'package:local_area_network_demo/password_input.dart';
 import 'package:local_area_network_demo/uuid.dart';
-
 import 'sp_util.dart';
 
 Future<void> main() async{
@@ -38,13 +40,13 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   String data;
-  List<DeviceModel> devices;
+  List<BroadcastModel> devices;
   String deviceName;
 
   @override
   void initState() {
     data = '';
-    devices = List<DeviceModel>();
+    devices = List<BroadcastModel>();
     if(SpUtil.getBool('isFirst',defValue: true)){
       SpUtil.putString('uuid', Uuid().generateV4());
       SpUtil.putBool('isFirst', false);
@@ -133,6 +135,21 @@ class _MyHomePageState extends State<MyHomePage> {
                   }),
             ],
           ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              CupertinoButton(
+                  child: Text('testUDPsSend'),
+                  onPressed: () {
+                    LANDiscovery().sendUDP(BroadcastModel(password: 21,deviceUuid: 'uuid',deviceName: 'xxx'));
+                  }),
+              CupertinoButton(
+                  child: Text('testUDPsRec'),
+                  onPressed: () {
+                    LANDiscovery().receiveUDP();
+                  }),
+            ],
+          ),
           VerificationCodePage(),
         ],
       ),
@@ -140,8 +157,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void testSend() {
-    var DESTINATION_ADDRESS = InternetAddress("255.255.255.255");
-    RawDatagramSocket.bind(InternetAddress.anyIPv4, 8889)
+    RawDatagramSocket.bind(InternetAddress.anyIPv4, Constant.portUDP)
         .then((RawDatagramSocket udpSocket) {
       udpSocket.broadcastEnabled = true;
       udpSocket.listen((e) {
@@ -150,17 +166,17 @@ class _MyHomePageState extends State<MyHomePage> {
           udpSocket.close();
         }
       });
-      DeviceModel device  = DeviceModel(deviceName: deviceName,deviceUuid: SpUtil.getString('uuid'));
+      BroadcastModel device  = BroadcastModel(deviceName: deviceName,deviceUuid: SpUtil.getString('uuid'));
       List<int> data = utf8.encode(json.encode(device.toJson()));
-      udpSocket.send(data, DESTINATION_ADDRESS, 8889);
+      udpSocket.send(data, Constant.broadcastAddress, Constant.portUDP);
       setState(() {
         this.data = '发送数据--${device.toJson().toString()}';
       });
     });
   }
 
-  void testReceive() async {
-    RawDatagramSocket.bind(InternetAddress.anyIPv4, 8889)
+  void testReceive() {
+    RawDatagramSocket.bind(InternetAddress.anyIPv4, Constant.portUDP)
         .then((RawDatagramSocket udpSocket) {
       receiver = udpSocket;
       receiver.listen((e) {
@@ -169,12 +185,12 @@ class _MyHomePageState extends State<MyHomePage> {
           print('ip${dg.address.address}');
           Utf8Decoder utf8decoder= Utf8Decoder();
           String jsonDevice = utf8decoder.convert(dg.data);
-          DeviceModel device = DeviceModel.fromJson(json.decode(jsonDevice));
+          BroadcastModel device = BroadcastModel.fromJson(json.decode(jsonDevice));
           if(devices.length==0){
             devices.add(device);
           }else{
             List<String> uuids = List<String>();
-            for(DeviceModel deviceModel in devices){
+            for(BroadcastModel deviceModel in devices){
               uuids.add(deviceModel.deviceUuid);
             }
             if(!uuids.contains(device.deviceUuid)){

@@ -1,9 +1,12 @@
-class DeviceModel {
+
+///从机广播消息model
+
+class BroadcastModel {
   String _deviceName;
   String _deviceUuid;
-  String _password;
+  int _password;
 
-  DeviceModel({String deviceName, String deviceUuid, String password}) {
+  BroadcastModel({String deviceName, String deviceUuid, int password}) {
     this._deviceName = deviceName;
     this._deviceUuid = deviceUuid;
     this._password = password;
@@ -11,9 +14,9 @@ class DeviceModel {
 
   String get deviceName => _deviceName;
   String get deviceUuid => _deviceUuid;
-  String get password => _password;
+  int get password => _password;
 
-  DeviceModel.fromJson(Map<String, dynamic> json) {
+  BroadcastModel.fromJson(Map<String, dynamic> json) {
     _deviceName = json['device_name'];
     _deviceUuid = json['device_uuid'];
     _password = json['password'];
