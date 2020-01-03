@@ -1,10 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:local_area_network_demo/answer_model.dart';
 import 'package:local_area_network_demo/broadcast_model.dart';
 import 'package:local_area_network_demo/constant.dart';
 import 'package:local_area_network_demo/lan_discovery.dart';

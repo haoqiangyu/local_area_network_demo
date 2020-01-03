@@ -10,6 +10,7 @@ class LANDiscovery {
   RawDatagramSocket receiverUDP;
   ServerSocket receiverTCP;
   VoidCallback sendUDPSuccessCallback;
+  Utf8Decoder utf8decoder = Utf8Decoder();
 
   LANDiscovery({this.sendUDPSuccessCallback});
 
@@ -21,9 +22,18 @@ class LANDiscovery {
     senderUDP.listen((e) {
       Datagram dg = senderUDP.receive();
       if (dg != null) {
-        receiveTCP();
-        print('从机---发送UDP广播成功');
-        senderUDP.close();
+        //receiveTCP();
+        String jsonDevice = utf8decoder.convert(dg.data);
+        if (AnswerModel.fromJson(json.decode(jsonDevice)).answer == null) {
+          print(
+              '从机---发送UDP广播成功-发送内容${utf8decoder.convert(dg.data)}自身ip-${dg.address.address}端口号-${dg.port}');
+
+        } else {
+          print('从机--收到主机应答内容--json$jsonDevice--主机ip${dg.address.address}端口号-${dg.port}');
+          senderUDP.close();
+          print('从机--准备通过TCP连接主机');
+          sendTCP(ip: dg.address.address,answer: AnswerModel(answer: '从机：我发送了联机请求'));
+        }
       }
     });
     List<int> data = utf8.encode(json.encode(broadcastModel.toJson()));
@@ -31,55 +41,64 @@ class LANDiscovery {
     print('从机---发送UDP广播~');
   }
 
-  ///主机接收UDP广播包，校验后发送TCP应答包
+  ///主机接收UDP广播包，校验后发送应答包
   void receiveUDP() async {
-    receiverUDP =
-        await RawDatagramSocket.bind(InternetAddress.anyIPv4, Constant.portUDP);
+    receiveTCP();
+    if(receiverUDP==null){
+      receiverUDP =
+      await RawDatagramSocket.bind(InternetAddress.anyIPv4, Constant.portUDP);
+    }
     receiverUDP.listen((e) {
       Datagram dg = receiverUDP.receive();
       if (dg != null) {
-        print('主机---接收UDP广播成功--我知道了从机的ip，让从机知道我的ip--发送TCP');
-        sendTCP(ip: dg.address.address, answer: AnswerModel(answer: '主机：我已知晓从机的联机请求'));
+        print('主机---接收UDP广播成功--从机ip${dg.address.address}端口号-${dg.port}');
+        print('主机--校验密码及uuid并回复');
+
+        AnswerModel answer = AnswerModel(answer: '主机：我已收到UDP包~');
+        List<int> data = utf8.encode(json.encode(answer.toJson()));
+        receiverUDP.send(
+            data, InternetAddress(dg.address.address), Constant.portUDP);
       }
     });
   }
 
-  ///主机发送TCP应答
+  ///从机发送TCP请求连接主机
   void sendTCP({String ip, AnswerModel answer}) async {
     Socket senderTCP = await Socket.connect(ip, Constant.portTCP);
-    Utf8Decoder utf8decoder = Utf8Decoder();
     senderTCP.listen((data) {
-      print('主机--收到从机对应答数据包的回复--${utf8decoder.convert(data)}');
+      print('从机--收到主机TCP的回复--${utf8decoder.convert(data)}');
     }, onDone: () {
-      print('主机--向从机发送接收广播应答包完成');
+      print('从机--向主机发送联机TCP请求完成');
       senderTCP.close();
     }, onError: (error) {
-      print('主机--发送应答包错误-$error');
+      print('从机--发送联机TCP请求错误-$error');
     });
     List<int> data = utf8.encode(json.encode(answer.toJson()));
     senderTCP.add(data);
-    print('主机--向从机发送接收广播应答包');
+    print('从机--向主机发送联机请求');
   }
 
-  ///从机接收主机的TCP应答包并回复
+  ///主机建立TCP服务器
   void receiveTCP() async {
-    receiverTCP = await ServerSocket.bind(
-        InternetAddress.anyIPv4, Constant.portTCP,
-        shared: true);
+    if(receiverTCP==null){
+      receiverTCP = await ServerSocket.bind(
+          InternetAddress.anyIPv4, Constant.portTCP,
+          shared: true);
+    }
+    print('主机--成功建立TCP-ServerSocket连接~');
     receiverTCP.listen((soc) async {
       print(
-          '从机--接收主机的广播应答包成功||连接源即主机ip和端口为${soc.remoteAddress.address}:${soc.remotePort}');
-      Utf8Decoder utf8decoder = Utf8Decoder();
+          '主机--接收到从机的连接请求--ip和端口为${soc.remoteAddress.address}:${soc.remotePort}');
       await for (List<int> d in soc.asBroadcastStream()) {
         if (d != null) {
-          print('从机--接收主机应答包内容-${utf8decoder.convert(d)}');
+          print('主机--接收从机联机请求内容-${utf8decoder.convert(d)}');
           break;
         }
       }
-      AnswerModel answer = AnswerModel(answer: '从机：我已知道你知道我的联机请求');
+      AnswerModel answer = AnswerModel(answer: '主机：我已知道你的联机请求');
       List<int> data = utf8.encode(json.encode(answer.toJson()));
       soc.add(data);
-      print('从机--发送回复主机应答的数据包');
+      print('主机--发送回复从机联机请求的数据包');
       soc.close();
     });
   }
